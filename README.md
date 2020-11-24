@@ -123,6 +123,7 @@ The frontend tracks field of view of the user and sends to the server new coordi
 - [Trio](https://trio.readthedocs.io/en/stable/) - for python async
 - [Trio-Websocket](https://pypi.org/project/trio-websocket/) - for websocket processing
 - [click](https://click.palletsprojects.com) - for CLI arguments
+- [Pydantic](https://pydantic-docs.helpmanual.io/) - for data validation
 
 
 ## Project Goals
