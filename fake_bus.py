@@ -50,10 +50,12 @@ async def main(server_url: str,
     """Entrypoint to run all async machinery."""
     send_channels = []
     async with trio.open_nursery() as nursery:
+        logger.info(f'Open {websockets_number} channels.')
         for _ in range(websockets_number):
             snd_channel, rcv_channel = trio.open_memory_channel(0)
             send_channels.append(snd_channel)
             nursery.start_soon(send_bus_updates, server_url, rcv_channel)  # consumer
+        logger.info(f'Start emulating {routes_number} buses.')
         for route in load_routes(max_routes=routes_number):
             for bus_num in range(buses_per_route):
                 start_offset = random.randint(0, len(route['coordinates']) - 1)
@@ -67,7 +69,7 @@ async def main(server_url: str,
                                    start_offset,
                                    refresh_timeout,
                                    )
-            logger.warning('Sending fake data')
+        logger.warning('Booted up. Sending fake data')
 
 def generate_bus_id(route_id: str, bus_index: int, prefix=''):
     return f'{prefix}{route_id}-{bus_index}'
@@ -104,15 +106,44 @@ async def send_bus_updates(server_address: str,
                            ) -> None:
     """Consume updates from trio channel and send them to a server via websockets."""
     async with open_websocket_url(server_address) as ws:
+        logger.debug(f'Established connection with {server_address}')
         async for message in receive_channel:
             await ws.send_message(json.dumps(message, ensure_ascii=False))
 
 
 async def run_bus(bus_channel: trio.MemorySendChannel,
                   bus_id: str,
-                  )
+                  route_name: str,
+                  route: List[List[float]],
+                  start_offset: int,
+                  refresh_timeout: Union[float, int],
+                  ) -> None:
+    """
+    Run bus through its route.
 
-
+    :param bus_channel: Trio channel to send coordinate updates
+    :param bus_id: Unique bus id
+    :param route_name: Name of bus route (on one route can be many buses)
+    :param route: A list of coordinates on a route.
+    :param start_offset: Start bus from point with this index on a route
+    :param refresh_timeout: Pause between coordinate updates
+    """
+    async with bus_channel:
+        while True:
+            for lat, lng in route[start_offset:]:
+                message = {
+                    'busId': bus_id,
+                    'lat': lat,
+                    'lng': lng,
+                    'route': route_name,
+                }
+                try:
+                    await bus_channel.send(message)
+                except trio.BrokenResourceError:
+                    logger.error('run_bus: Bus coordinates consumer has closed. No point of sending them.')
+                    return
+                await trio.sleep(refresh_timeout)
+            start_offset = 0  # After reaching the end of route the bus starts from the beginning.
 
 
 if __name__ == '__main__':
