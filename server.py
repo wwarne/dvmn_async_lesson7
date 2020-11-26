@@ -95,7 +95,7 @@ def format_errors(e: ValidationError) -> dict:
     """Structure pydantic validation errors into a dict."""
     return {
         'msgType': 'Errors',
-        'errors': [{Server has booted up at
+        'errors': [{
             'loc': err['loc'],
             'msg': err['msg'],
             'type': err['type'],
