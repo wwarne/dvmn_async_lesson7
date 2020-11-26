@@ -1,21 +1,19 @@
+import contextvars
 import json
 import logging
-import contextvars
+from datetime import datetime
+from functools import partial
+
 import click
 import trio
-from trio_websocket import serve_websocket, ConnectionClosed, WebSocketConnection, WebSocketRequest
 from pydantic import BaseModel, ValidationError, validator
-from datetime import datetime
-
-from functools import partial
+from trio_websocket import serve_websocket, ConnectionClosed, WebSocketConnection, WebSocketRequest
 
 logging.basicConfig(format='%(asctime)s :: %(levelname)s :: %(message)s')
 logger = logging.getLogger('bus_server')
 serve_websocket_http = partial(serve_websocket, ssl_context=None)
 
 BUSES_DATA = {}
-# Note - each user has its own map coordinates
-# to store it we need
 window_boundaties = contextvars.ContextVar('window_boundaties')
 
 class Bus(BaseModel):
@@ -173,7 +171,9 @@ async def listen_to_browser(ws: WebSocketConnection) -> None:
                     west_lng=new_window.west_lng,
                     east_lng=new_window.east_lng,
                 )
-                logger.debug('listen_browser: Window boundaries updated')
+                lat1 = new_window.north_lat - new_window.south_lat
+                lng1 = new_window.west_lng - new_window.east_lng
+                logger.debug(f'listen_browser: Window boundaries updated lat {lat1} lng {lng1}')
         except ConnectionClosed:
             logger.debug('listen_to_browser: Connection closed')
             break
@@ -189,7 +189,7 @@ async def tell_to_browser(ws: WebSocketConnection) -> None:
             'msgType': 'Buses',
             'buses': buses_inside,
         }
-        logger.debug(f'tell_to_browser: {len(buses_inside)} inside bounds')
+        # logger.debug(f'tell_to_browser: {len(buses_inside)} inside bounds')
         try:
             await ws.send_message(json.dumps(response_msg, ensure_ascii=False))
         except ConnectionClosed:
