@@ -130,12 +130,13 @@ async def handle_browser(request: WebSocketRequest) -> None:
     User receives list of buses in his visible area.
     """
     ws = await request.accept()
-    logger.debug(f'handle_browser: Incoming user connection from {request.remote.url}')
+    user_uri = request.remote.url
+    logger.debug(f'handle_browser: Incoming user connection from {user_uri}')
     window_boundaties.set(WindowBound(north_lat=0, south_lat=0, west_lng=0, east_lng=0))
     async with trio.open_nursery() as nursery:
         nursery.start_soon(listen_to_browser, ws)
         nursery.start_soon(tell_to_browser, ws)
-    logger.debug(f'handle_browser: User {request.remote.url} has disconnected.')
+    logger.debug(f'handle_browser: User {user_uri} has disconnected.')
 
 
 async def listen_to_browser(ws: WebSocketConnection) -> None:
