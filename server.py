@@ -1,11 +1,13 @@
 import contextvars
 import json
 import logging
-from datetime import datetime
-from functools import partial
 
 import click
 import trio
+
+from datetime import datetime
+from functools import partial
+
 from pydantic import BaseModel, ValidationError, validator
 from trio_websocket import serve_websocket, ConnectionClosed, WebSocketConnection, WebSocketRequest
 
@@ -65,7 +67,7 @@ class BrowserWindowMessage(BaseModel):
 @click.option('--browser_port', help='Communicate with browser through this port', default=8000, show_default=True, envvar='BUS_PORT')
 def load_and_run(browser_port, bus_port, host, verbose):
     log_level = {
-        0: logging.WARNING,  # default
+        0: logging.WARNING,
         1: logging.INFO,
         2: logging.DEBUG,
     }
