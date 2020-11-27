@@ -113,6 +113,18 @@ The frontend tracks field of view of the user and sends to the server new coordi
 }
 ```
 
+## Harmful client & bus
+
+You can try and send to server messages with errors to check.
+
+```commandline
+python harmful_bus.py
+```
+```commandline
+python harmful_client.py
+```
+
+
 ## Used libraries
 
 - Frontend
