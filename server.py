@@ -85,7 +85,7 @@ async def run_server(browser_port: int, bus_port: int, host: str) -> None:
     async with trio.open_nursery() as nursery:
         nursery.start_soon(serve_websocket_http, handle_bus, host, bus_port)
         nursery.start_soon(serve_websocket_http, handle_browser, host, browser_port)
-        logger.info(f'Server has booted up at {datetime.utcnow()}')
+        logger.warning(f'Server has booted up at {datetime.utcnow()}')
 
 
 def format_errors(e: ValidationError) -> dict:
@@ -101,7 +101,7 @@ def format_errors(e: ValidationError) -> dict:
 
 async def handle_bus(request: WebSocketRequest) -> None:
     """
-    Receives messages with buses locations updates and update in-memory buses storage.
+    Receives messages with buses location updates and update in-memory buses storage.
 
     message example - '{"busId": "bus-0001", "lat": 55.03332, "lng": 35.4564, "route": "14k"}'
     """
@@ -126,7 +126,7 @@ async def handle_browser(request: WebSocketRequest) -> None:
     """
     Handle incoming user connection.
 
-    When user moves the map frontend sends map boundaries.
+    When user moves the map - frontend sends map boundaries.
     User receives list of buses in his visible area.
     """
     ws = await request.accept()
@@ -171,9 +171,7 @@ async def listen_to_browser(ws: WebSocketConnection) -> None:
                     west_lng=new_window.west_lng,
                     east_lng=new_window.east_lng,
                 )
-                lat1 = new_window.north_lat - new_window.south_lat
-                lng1 = new_window.west_lng - new_window.east_lng
-                logger.debug(f'listen_browser: Window boundaries updated lat {lat1} lng {lng1}')
+                logger.debug(f'listen_browser: Window boundaries updated')
         except ConnectionClosed:
             logger.debug('listen_to_browser: Connection closed')
             break
@@ -189,7 +187,6 @@ async def tell_to_browser(ws: WebSocketConnection) -> None:
             'msgType': 'Buses',
             'buses': buses_inside,
         }
-        # logger.debug(f'tell_to_browser: {len(buses_inside)} inside bounds')
         try:
             await ws.send_message(json.dumps(response_msg, ensure_ascii=False))
         except ConnectionClosed:
