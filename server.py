@@ -14,7 +14,7 @@ logger = logging.getLogger('bus_server')
 serve_websocket_http = partial(serve_websocket, ssl_context=None)
 
 BUSES_DATA = {}
-window_boundaties = contextvars.ContextVar('window_boundaties')
+window_boundaries = contextvars.ContextVar('window_boundaries')
 
 class Bus(BaseModel):
     busId: str
@@ -132,7 +132,7 @@ async def handle_browser(request: WebSocketRequest) -> None:
     ws = await request.accept()
     user_uri = request.remote.url
     logger.debug(f'handle_browser: Incoming user connection from {user_uri}')
-    window_boundaties.set(WindowBound(north_lat=0, south_lat=0, west_lng=0, east_lng=0))
+    window_boundaries.set(WindowBound(north_lat=0, south_lat=0, west_lng=0, east_lng=0))
     async with trio.open_nursery() as nursery:
         nursery.start_soon(listen_to_browser, ws)
         nursery.start_soon(tell_to_browser, ws)
@@ -164,7 +164,7 @@ async def listen_to_browser(ws: WebSocketConnection) -> None:
                 error_dict = format_errors(e)
                 await ws.send_message(json.dumps(error_dict))
             else:
-                current_bounds = window_boundaties.get()
+                current_bounds = window_boundaries.get()
                 current_bounds.update(
                     south_lat=new_window.south_lat,
                     north_lat=new_window.north_lat,
@@ -181,7 +181,7 @@ async def listen_to_browser(ws: WebSocketConnection) -> None:
 async def tell_to_browser(ws: WebSocketConnection) -> None:
     """Sends visible buses to a user."""
     while True:
-        bounds = window_boundaties.get()
+        bounds = window_boundaries.get()
         buses_inside = [
             bus.dict() for bus in BUSES_DATA.values() if bounds.is_bus_inside(bus)
         ]
