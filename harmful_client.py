@@ -104,12 +104,17 @@ async def main():
             for desc, message in _BAD_MESSAGES.items():
                 logging.info(f'Sending message "{desc}"')
                 await ws.send_message(json.dumps(message, ensure_ascii=False))
-                for _ in range(5):
-                    message = await ws.get_message()
-                    if 'Errors' in message:
-                        logging.error(f'Received answer: {message}')
+                # note - server sends not only errors but buses positions too.
+                # so if we just use ws.get_message() we will get just  'msgType': 'Buses' message
+                with trio.move_on_after(2) as cancel_scope:
+                    message = ''
+                    while 'Errors' not in message:
+                        message = await ws.get_message()
+                    logging.info(f'Received answer: {message}')
+                if cancel_scope.cancelled_caught:
+                    logging.error('Server should returned error message but it didn\'t!')
     except OSError as ose:
-        logging.error('Connection attempt failed: %s', ose)
+        logging.error(f'Connection attempt failed: {ose}')
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s :: %(levelname)s :: %(message)s', level=logging.INFO)
