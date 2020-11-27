@@ -70,7 +70,6 @@ def load_and_run(browser_port, bus_port, host, verbose):
         2: logging.DEBUG,
     }
     verbose = 2 if verbose > 2 else verbose
-    verbose = 2
     logger.setLevel(level=log_level[verbose])
     logger.debug(f'Starting server with parameters: Browser port: {browser_port} Bus port: {bus_port} Host: {host} Verbose: {verbose}')
     trio.run(run_server, browser_port, bus_port, host)
