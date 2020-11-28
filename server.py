@@ -3,26 +3,38 @@ import json
 import logging
 from datetime import datetime
 from functools import partial
+from typing import Optional, Tuple
 
 import click
 import trio
 from pydantic import BaseModel, ValidationError, validator
-from trio_websocket import serve_websocket, ConnectionClosed, WebSocketConnection, WebSocketRequest
+from trio_websocket import (
+    ConnectionClosed,
+    WebSocketConnection,
+    WebSocketRequest,
+    serve_websocket
+)
 
 logging.basicConfig(format='%(asctime)s :: %(levelname)s :: %(message)s')
 logger = logging.getLogger('bus_server')
 serve_websocket_http = partial(serve_websocket, ssl_context=None)
 
-BUSES_DATA = {}
-window_boundaties = contextvars.ContextVar('window_boundaties')
+_buses_data = {}
+window_boundaries = contextvars.ContextVar('window_boundaries')
+
 
 class Bus(BaseModel):
+    """Information about bus."""
+
     busId: str
     lat: float
     lng: float
     route: str
 
+
 class WindowBound(BaseModel):
+    """Map bounds. User can't see beyond the border."""
+
     north_lat: float
     south_lat: float
     west_lng: float
@@ -48,6 +60,7 @@ class WindowBound(BaseModel):
 
 class BrowserWindowMessage(BaseModel):
     """Class for validation incoming data from user."""
+
     msgType: str
     data: WindowBound
 
@@ -60,12 +73,13 @@ class BrowserWindowMessage(BaseModel):
 
 @click.command()
 @click.option('--verbose', '-v', count=True, help='Logging level (-v, -vv)')
-@click.option('--host', help='Server address', default='127.0.0.1', show_default=True,)
+@click.option('--host', help='Server address', default='127.0.0.1', show_default=True)
 @click.option('--bus_port', help='Receive data from bus emulator through this port', default=8080, show_default=True)
 @click.option('--browser_port', help='Communicate with browser through this port', default=8000, show_default=True, envvar='BUS_PORT')
 def load_and_run(browser_port, bus_port, host, verbose):
+    """Check arguments and start server."""
     log_level = {
-        0: logging.WARNING,  # default
+        0: logging.WARNING,
         1: logging.INFO,
         2: logging.DEBUG,
     }
@@ -85,10 +99,10 @@ async def run_server(browser_port: int, bus_port: int, host: str) -> None:
     async with trio.open_nursery() as nursery:
         nursery.start_soon(serve_websocket_http, handle_bus, host, bus_port)
         nursery.start_soon(serve_websocket_http, handle_browser, host, browser_port)
-        logger.info(f'Server has booted up at {datetime.utcnow()}')
+        logger.warning(f'Server has booted up at {datetime.utcnow()}')
 
 
-def format_errors(e: ValidationError) -> dict:
+def format_errors(error: ValidationError) -> dict:
     """Structure pydantic validation errors into a dict."""
     return {
         'msgType': 'Errors',
@@ -96,12 +110,31 @@ def format_errors(e: ValidationError) -> dict:
             'loc': err['loc'],
             'msg': err['msg'],
             'type': err['type'],
-        } for err in e.errors()]
+        } for err in error.errors()]
     }
+
+
+def validate_bus(message: str) -> Tuple[Bus, Optional[dict]]:
+    bus, errors = None, None
+    try:
+        bus = Bus.parse_raw(message)
+    except ValidationError as e:
+        errors = format_errors(e)
+    return bus, errors
+
+def validate_window_bounds(message: str) -> Tuple[WindowBound, Optional[dict]]:
+    """Validate incoming message with user's window boundaries."""
+    new_window, errors = None, None
+    try:
+        new_window = BrowserWindowMessage.parse_raw(message).data
+    except ValidationError as e:
+        errors = format_errors(e)
+    return new_window, errors
+
 
 async def handle_bus(request: WebSocketRequest) -> None:
     """
-    Receives messages with buses locations updates and update in-memory buses storage.
+    Receives messages with buses location updates and update in-memory buses storage.
 
     message example - '{"busId": "bus-0001", "lat": 55.03332, "lng": 35.4564, "route": "14k"}'
     """
@@ -110,29 +143,28 @@ async def handle_bus(request: WebSocketRequest) -> None:
     while True:
         try:
             message = await ws.get_message()
-            try:
-                bus = Bus.parse_raw(message)
-            except ValidationError as e:
+            bus, errors = validate_bus(message)
+            if errors:
                 logger.error(f'grab_bus: Bad bus message - {message}')
-                error_dict = format_errors(e)
-                await ws.send_message(json.dumps(error_dict))
-            else:
-                BUSES_DATA[bus.busId] = bus
+                await ws.send_message(json.dumps(errors))
+                continue
+            _buses_data[bus.busId] = bus
         except ConnectionClosed:
             logger.debug('grab_bus: Connection closed')
             break
+
 
 async def handle_browser(request: WebSocketRequest) -> None:
     """
     Handle incoming user connection.
 
-    When user moves the map frontend sends map boundaries.
+    When user moves the map - frontend sends map boundaries.
     User receives list of buses in his visible area.
     """
     ws = await request.accept()
     user_uri = request.remote.url
     logger.debug(f'handle_browser: Incoming user connection from {user_uri}')
-    window_boundaties.set(WindowBound(north_lat=0, south_lat=0, west_lng=0, east_lng=0))
+    window_boundaries.set(WindowBound(north_lat=0, south_lat=0, west_lng=0, east_lng=0))
     async with trio.open_nursery() as nursery:
         nursery.start_soon(listen_to_browser, ws)
         nursery.start_soon(tell_to_browser, ws)
@@ -157,39 +189,35 @@ async def listen_to_browser(ws: WebSocketConnection) -> None:
     while True:
         try:
             message = await ws.get_message()
-            try:
-                new_window = BrowserWindowMessage.parse_raw(message).data
-            except ValidationError as e:
+            new_window, errors = validate_window_bounds(message)
+            if errors:
                 logger.error(f'listen_browser: Bad newBounds message - {message}')
-                error_dict = format_errors(e)
-                await ws.send_message(json.dumps(error_dict))
-            else:
-                current_bounds = window_boundaties.get()
-                current_bounds.update(
-                    south_lat=new_window.south_lat,
-                    north_lat=new_window.north_lat,
-                    west_lng=new_window.west_lng,
-                    east_lng=new_window.east_lng,
-                )
-                lat1 = new_window.north_lat - new_window.south_lat
-                lng1 = new_window.west_lng - new_window.east_lng
-                logger.debug(f'listen_browser: Window boundaries updated lat {lat1} lng {lng1}')
+                await ws.send_message(json.dumps(errors))
+                continue
+            current_bounds = window_boundaries.get()
+            current_bounds.update(
+                south_lat=new_window.south_lat,
+                north_lat=new_window.north_lat,
+                west_lng=new_window.west_lng,
+                east_lng=new_window.east_lng,
+            )
+            logger.debug('listen_browser: Window boundaries updated')
         except ConnectionClosed:
             logger.debug('listen_to_browser: Connection closed')
             break
 
+
 async def tell_to_browser(ws: WebSocketConnection) -> None:
-    """Sends visible buses to a user."""
+    """Send visible buses to a user."""
     while True:
-        bounds = window_boundaties.get()
+        bounds = window_boundaries.get()
         buses_inside = [
-            bus.dict() for bus in BUSES_DATA.values() if bounds.is_bus_inside(bus)
+            bus.dict() for bus in _buses_data.values() if bounds.is_bus_inside(bus)
         ]
         response_msg = {
             'msgType': 'Buses',
             'buses': buses_inside,
         }
-        # logger.debug(f'tell_to_browser: {len(buses_inside)} inside bounds')
         try:
             await ws.send_message(json.dumps(response_msg, ensure_ascii=False))
         except ConnectionClosed:

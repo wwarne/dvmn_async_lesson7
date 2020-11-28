@@ -3,18 +3,19 @@ import logging
 import pathlib
 import random
 import sys
+from functools import wraps
+from itertools import cycle
+from typing import Callable, List, Optional, Union
+
 import click
 import trio
-
-from functools import wraps
-from typing import Union, Optional, Generator, List, Callable
-from trio_websocket import open_websocket_url, ConnectionClosed, HandshakeError
+from trio_websocket import ConnectionClosed, HandshakeError, open_websocket_url
 
 logging.basicConfig(format='%(asctime)s :: %(levelname)s :: %(message)s')
 logger = logging.getLogger('fake_bus')
 
+
 @click.command()
-@click.option('-v', '--verbose', count=True, help='Logging level (-v, -vv)')
 @click.option('-v', '--verbose', count=True, help='Logging level (-v, -vv)')
 @click.option('--refresh_timeout', '-t', type=int, default=1, help='Delay between coordinates switch.')
 @click.option('--emulator_id', '-e', type=str, default='', help='busId prefix in case few bus emulators will run in parallel')
@@ -25,7 +26,7 @@ logger = logging.getLogger('fake_bus')
 def bus_faker(server, routes_number, buses_per_route, websockets_number, emulator_id, refresh_timeout, verbose):
     """Check arguments and runs bus emulator."""
     log_level = {
-        0: logging.WARNING,  # default
+        0: logging.WARNING,
         1: logging.INFO,
         2: logging.DEBUG,
     }
@@ -46,7 +47,8 @@ async def main(server_url: str,
                buses_per_route: int,
                websockets_number: int,
                emulator_id: str,
-               refresh_timeout: Union[int, float]) -> None:
+               refresh_timeout: Union[int, float],
+               ) -> None:
     """Entrypoint to run all async machinery."""
     send_channels = []
     async with trio.open_nursery() as nursery:
@@ -56,11 +58,12 @@ async def main(server_url: str,
             send_channels.append(snd_channel)
             nursery.start_soon(send_bus_updates, server_url, rcv_channel)  # consumer
         logger.info(f'Start emulating {routes_number} buses.')
+        channel_choice = cycle(send_channels)
         for route in load_routes(max_routes=routes_number):
             for bus_num in range(buses_per_route):
                 start_offset = random.randint(0, len(route['coordinates']) - 1)
                 bus_id = generate_bus_id(route_id=route['name'], bus_index=bus_num, prefix=emulator_id)
-                bus_send_channel = random.choice(send_channels)
+                bus_send_channel = next(channel_choice)
                 nursery.start_soon(run_bus,
                                    bus_send_channel,
                                    bus_id,
@@ -102,8 +105,7 @@ def relaunch_on_disconnect(delay: Union[int, float]) -> Callable:
 
 @relaunch_on_disconnect(delay=1)
 async def send_bus_updates(server_address: str,
-                           receive_channel: trio.MemoryReceiveChannel,
-                           ) -> None:
+                           receive_channel: trio.MemoryReceiveChannel) -> None:
     """Consume updates from trio channel and send them to a server via websockets."""
     async with open_websocket_url(server_address) as ws:
         logger.debug(f'Established connection with {server_address}')
