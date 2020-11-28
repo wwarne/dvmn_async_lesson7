@@ -107,6 +107,24 @@ def format_errors(e: ValidationError) -> dict:
     }
 
 
+def validate_bus(message: str) -> Tuple[Bus, Optional[dict]]:
+    bus, errors = None, None
+    try:
+        bus = Bus.parse_raw(message)
+    except ValidationError as e:
+        errors = format_errors(e)
+    return bus, errors
+
+def validate_window_bounds(message: str) -> Tuple[WindowBound, Optional[dict]]:
+    """Validate incoming message with user's window boundaries."""
+    new_window, errors = None, None
+    try:
+        new_window = BrowserWindowMessage.parse_raw(message).data
+    except ValidationError as e:
+        errors = format_errors(e)
+    return new_window, errors
+
+
 async def handle_bus(request: WebSocketRequest) -> None:
     """
     Receives messages with buses location updates and update in-memory buses storage.
@@ -118,14 +136,12 @@ async def handle_bus(request: WebSocketRequest) -> None:
     while True:
         try:
             message = await ws.get_message()
-            try:
-                bus = Bus.parse_raw(message)
-            except ValidationError as e:
+            bus, errors = validate_bus(message)
+            if errors:
                 logger.error(f'grab_bus: Bad bus message - {message}')
-                error_dict = format_errors(e)
-                await ws.send_message(json.dumps(error_dict))
-            else:
-                BUSES_DATA[bus.busId] = bus
+                await ws.send_message(json.dumps(errors))
+                continue
+            BUSES_DATA[bus.busId] = bus
         except ConnectionClosed:
             logger.debug('grab_bus: Connection closed')
             break
@@ -146,16 +162,6 @@ async def handle_browser(request: WebSocketRequest) -> None:
         nursery.start_soon(listen_to_browser, ws)
         nursery.start_soon(tell_to_browser, ws)
     logger.debug(f'handle_browser: User {user_uri} has disconnected.')
-
-
-def validate_window_bounds(message: str) -> Tuple[WindowBound, Optional[dict]]:
-    """Validate incoming message with user's window boundaries."""
-    new_window, errors = None, None
-    try:
-        new_window = BrowserWindowMessage.parse_raw(message).data
-    except ValidationError as e:
-        errors = format_errors(e)
-    return new_window, errors
 
 
 async def listen_to_browser(ws: WebSocketConnection) -> None:
