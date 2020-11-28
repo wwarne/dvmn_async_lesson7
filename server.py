@@ -1,26 +1,31 @@
 import contextvars
 import json
 import logging
-from typing import Tuple, Optional
+from datetime import datetime
+from functools import partial
+from typing import Optional, Tuple
 
 import click
 import trio
-
-from datetime import datetime
-from functools import partial
-
 from pydantic import BaseModel, ValidationError, validator
-from trio_websocket import serve_websocket, ConnectionClosed, WebSocketConnection, WebSocketRequest
+from trio_websocket import (
+    ConnectionClosed,
+    WebSocketConnection,
+    WebSocketRequest,
+    serve_websocket
+)
 
 logging.basicConfig(format='%(asctime)s :: %(levelname)s :: %(message)s')
 logger = logging.getLogger('bus_server')
 serve_websocket_http = partial(serve_websocket, ssl_context=None)
 
-BUSES_DATA = {}
+_buses_data = {}
 window_boundaries = contextvars.ContextVar('window_boundaries')
 
 
 class Bus(BaseModel):
+    """Information about bus."""
+
     busId: str
     lat: float
     lng: float
@@ -28,6 +33,7 @@ class Bus(BaseModel):
 
 
 class WindowBound(BaseModel):
+    """Map bounds. User can't see beyond the border."""
 
     north_lat: float
     south_lat: float
@@ -67,10 +73,11 @@ class BrowserWindowMessage(BaseModel):
 
 @click.command()
 @click.option('--verbose', '-v', count=True, help='Logging level (-v, -vv)')
-@click.option('--host', help='Server address', default='127.0.0.1', show_default=True,)
+@click.option('--host', help='Server address', default='127.0.0.1', show_default=True)
 @click.option('--bus_port', help='Receive data from bus emulator through this port', default=8080, show_default=True)
 @click.option('--browser_port', help='Communicate with browser through this port', default=8000, show_default=True, envvar='BUS_PORT')
 def load_and_run(browser_port, bus_port, host, verbose):
+    """Check arguments and start server."""
     log_level = {
         0: logging.WARNING,
         1: logging.INFO,
@@ -95,7 +102,7 @@ async def run_server(browser_port: int, bus_port: int, host: str) -> None:
         logger.warning(f'Server has booted up at {datetime.utcnow()}')
 
 
-def format_errors(e: ValidationError) -> dict:
+def format_errors(error: ValidationError) -> dict:
     """Structure pydantic validation errors into a dict."""
     return {
         'msgType': 'Errors',
@@ -103,7 +110,7 @@ def format_errors(e: ValidationError) -> dict:
             'loc': err['loc'],
             'msg': err['msg'],
             'type': err['type'],
-        } for err in e.errors()]
+        } for err in error.errors()]
     }
 
 
@@ -141,7 +148,7 @@ async def handle_bus(request: WebSocketRequest) -> None:
                 logger.error(f'grab_bus: Bad bus message - {message}')
                 await ws.send_message(json.dumps(errors))
                 continue
-            BUSES_DATA[bus.busId] = bus
+            _buses_data[bus.busId] = bus
         except ConnectionClosed:
             logger.debug('grab_bus: Connection closed')
             break
@@ -205,7 +212,7 @@ async def tell_to_browser(ws: WebSocketConnection) -> None:
     while True:
         bounds = window_boundaries.get()
         buses_inside = [
-            bus.dict() for bus in BUSES_DATA.values() if bounds.is_bus_inside(bus)
+            bus.dict() for bus in _buses_data.values() if bounds.is_bus_inside(bus)
         ]
         response_msg = {
             'msgType': 'Buses',
