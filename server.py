@@ -1,6 +1,7 @@
 import contextvars
 import json
 import logging
+from typing import Tuple, Optional
 
 import click
 import trio
@@ -147,6 +148,16 @@ async def handle_browser(request: WebSocketRequest) -> None:
     logger.debug(f'handle_browser: User {user_uri} has disconnected.')
 
 
+def validate_window_bounds(message: str) -> Tuple[WindowBound, Optional[dict]]:
+    """Validate incoming message with user's window boundaries."""
+    new_window, errors = None, None
+    try:
+        new_window = BrowserWindowMessage.parse_raw(message).data
+    except ValidationError as e:
+        errors = format_errors(e)
+    return new_window, errors
+
+
 async def listen_to_browser(ws: WebSocketConnection) -> None:
     """
     Listen for an incoming websocket messages with new window boundaries.
@@ -165,27 +176,26 @@ async def listen_to_browser(ws: WebSocketConnection) -> None:
     while True:
         try:
             message = await ws.get_message()
-            try:
-                new_window = BrowserWindowMessage.parse_raw(message).data
-            except ValidationError as e:
+            new_window, errors = validate_window_bounds(message)
+            if errors:
                 logger.error(f'listen_browser: Bad newBounds message - {message}')
-                error_dict = format_errors(e)
-                await ws.send_message(json.dumps(error_dict))
-            else:
-                current_bounds = window_boundaries.get()
-                current_bounds.update(
-                    south_lat=new_window.south_lat,
-                    north_lat=new_window.north_lat,
-                    west_lng=new_window.west_lng,
-                    east_lng=new_window.east_lng,
-                )
-                logger.debug(f'listen_browser: Window boundaries updated')
+                await ws.send_message(json.dumps(errors))
+                continue
+            current_bounds = window_boundaries.get()
+            current_bounds.update(
+                south_lat=new_window.south_lat,
+                north_lat=new_window.north_lat,
+                west_lng=new_window.west_lng,
+                east_lng=new_window.east_lng,
+            )
+            logger.debug('listen_browser: Window boundaries updated')
         except ConnectionClosed:
             logger.debug('listen_to_browser: Connection closed')
             break
 
+
 async def tell_to_browser(ws: WebSocketConnection) -> None:
-    """Sends visible buses to a user."""
+    """Send visible buses to a user."""
     while True:
         bounds = window_boundaries.get()
         buses_inside = [
