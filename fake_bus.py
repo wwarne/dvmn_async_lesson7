@@ -3,16 +3,17 @@ import logging
 import pathlib
 import random
 import sys
-import click
-import trio
-
 from functools import wraps
 from itertools import cycle
-from typing import Union, Optional, List, Callable
-from trio_websocket import open_websocket_url, ConnectionClosed, HandshakeError
+from typing import Callable, List, Optional, Union
+
+import click
+import trio
+from trio_websocket import ConnectionClosed, HandshakeError, open_websocket_url
 
 logging.basicConfig(format='%(asctime)s :: %(levelname)s :: %(message)s')
 logger = logging.getLogger('fake_bus')
+
 
 @click.command()
 @click.option('-v', '--verbose', count=True, help='Logging level (-v, -vv)')
@@ -46,7 +47,8 @@ async def main(server_url: str,
                buses_per_route: int,
                websockets_number: int,
                emulator_id: str,
-               refresh_timeout: Union[int, float]) -> None:
+               refresh_timeout: Union[int, float],
+               ) -> None:
     """Entrypoint to run all async machinery."""
     send_channels = []
     async with trio.open_nursery() as nursery:
@@ -103,8 +105,7 @@ def relaunch_on_disconnect(delay: Union[int, float]) -> Callable:
 
 @relaunch_on_disconnect(delay=1)
 async def send_bus_updates(server_address: str,
-                           receive_channel: trio.MemoryReceiveChannel,
-                           ) -> None:
+                           receive_channel: trio.MemoryReceiveChannel) -> None:
     """Consume updates from trio channel and send them to a server via websockets."""
     async with open_websocket_url(server_address) as ws:
         logger.debug(f'Established connection with {server_address}')
