@@ -16,7 +16,6 @@ logger = logging.getLogger('fake_bus')
 
 @click.command()
 @click.option('-v', '--verbose', count=True, help='Logging level (-v, -vv)')
-@click.option('-v', '--verbose', count=True, help='Logging level (-v, -vv)')
 @click.option('--refresh_timeout', '-t', type=int, default=1, help='Delay between coordinates switch.')
 @click.option('--emulator_id', '-e', type=str, default='', help='busId prefix in case few bus emulators will run in parallel')
 @click.option('--websockets_number', '-w', type=int, default=5, help='Number of opened websocket connections.')

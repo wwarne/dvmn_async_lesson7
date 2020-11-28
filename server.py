@@ -18,13 +18,16 @@ serve_websocket_http = partial(serve_websocket, ssl_context=None)
 BUSES_DATA = {}
 window_boundaries = contextvars.ContextVar('window_boundaries')
 
+
 class Bus(BaseModel):
     busId: str
     lat: float
     lng: float
     route: str
 
+
 class WindowBound(BaseModel):
+
     north_lat: float
     south_lat: float
     west_lng: float
@@ -50,6 +53,7 @@ class WindowBound(BaseModel):
 
 class BrowserWindowMessage(BaseModel):
     """Class for validation incoming data from user."""
+
     msgType: str
     data: WindowBound
 
@@ -101,6 +105,7 @@ def format_errors(e: ValidationError) -> dict:
         } for err in e.errors()]
     }
 
+
 async def handle_bus(request: WebSocketRequest) -> None:
     """
     Receives messages with buses location updates and update in-memory buses storage.
@@ -123,6 +128,7 @@ async def handle_bus(request: WebSocketRequest) -> None:
         except ConnectionClosed:
             logger.debug('grab_bus: Connection closed')
             break
+
 
 async def handle_browser(request: WebSocketRequest) -> None:
     """
